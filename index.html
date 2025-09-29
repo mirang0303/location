@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Locations Info — Template</title>
+  <style>
+    :root{--accent:#4F46E5;--muted:#6b7280}
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Arial,sans-serif;margin:0;background:#f7f7fb;color:#111}
+    .container{max-width:1100px;margin:32px auto;padding:16px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px}
+    h1{margin:0;font-size:20px}
+    button{background:var(--accent);color:white;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid rgba(79,70,229,.12)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+    .card{background:white;border-radius:12px;box-shadow:0 6px 18px rgba(16,24,40,.06);overflow:hidden;display:flex;flex-direction:column}
+    .card img{width:100%;height:160px;object-fit:cover}
+    .card .body{padding:12px;flex:1;display:flex;flex-direction:column}
+    .meta{font-size:13px;color:var(--muted);margin-bottom:8px}
+    .title{font-weight:600;margin:0 0 6px}
+    .desc{font-size:14px;color:#333;flex:1}
+    .actions{display:flex;gap:8px;margin-top:10px}
+    .small{padding:6px 8px;border-radius:8px;font-size:13px}
+    .edit{background:#fff;border:1px solid #e6e6f0;color:var(--accent)}
+    .del{background:#fff;border:1px solid #ffd6d6;color:#b91c1c}
+
+    /* Modal */
+    .modal-backdrop{position:fixed;inset:0;display:none;justify-content:center;align-items:flex-start;padding:28px;z-index:50}
+    .modal{background:white;border-radius:12px;padding:16px;width:100%;max-width:680px;box-shadow:0 12px 40px rgba(2,6,23,.3)}
+    .row{display:flex;gap:12px;margin-bottom:12px}
+    .col{flex:1}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input[type=text],textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e9e9f3}
+    textarea{min-height:120px;resize:vertical}
+    .img-preview{height:150px;border-radius:8px;overflow:hidden;border:1px dashed #e3e3f7;display:flex;align-items:center;justify-content:center;background:#fafafa}
+    .img-preview img{max-width:100%;max-height:100%;object-fit:cover}
+    .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .search{padding:8px 12px;border-radius:12px;border:1px solid #e9e9f3;min-width:220px}
+    .empty{padding:48px;text-align:center;color:var(--muted)}
+
+    @media (max-width:520px){.row{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Locations — Info Manager</h1>
+      <div class="toolbar">
+        <input id="search" class="search" placeholder="Search locations..." />
+        <button id="openAdd">+ Add location</button>
+        <button id="exportBtn" class="ghost">Export JSON</button>
+        <label for="importFile" class="ghost" style="cursor:pointer;display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid #ddd">Import JSON</label>
+        <input id="importFile" type="file" accept="application/json" style="display:none">
+      </div>
+    </header>
+
+    <main>
+      <div id="grid" class="grid"></div>
+      <div id="empty" class="empty" style="display:none">No locations yet. Click “+ Add location” to create one.</div>
+    </main>
+  </div>
+
+  <!-- Modal form for add/edit -->
+  <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true">
+      <form id="locationForm">
+        <input type="hidden" id="locId">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong id="formTitle">Add new location</strong>
+          <div style="display:flex;gap:8px">
+            <button type="button" id="cancelBtn" class="ghost small">Cancel</button>
+            <button type="submit" id="saveBtn">Save</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col">
+            <label for="name">Name</label>
+            <input id="name" type="text" required>
+          </div>
+          <div style="width:220px">
+            <label for="imageInput">Image</label>
+            <div class="img-preview" id="imgPreview">Drop image or click to choose</div>
+            <input id="imageInput" type="file" accept="image/*" style="margin-top:8px">
+          </div>
+        </div>
+
+        <div>
+          <label for="desc">Description / Details</label>
+          <textarea id="desc"></textarea>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <template id="cardTpl">
+    <article class="card">
+      <img src="" alt="location image">
+      <div class="body">
+        <div class="meta"></div>
+        <h3 class="title"></h3>
+        <p class="desc"></p>
+        <div class="actions">
+          <button class="small edit">Edit</button>
+          <button class="small del">Delete</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script>
+    const STORAGE_KEY = 'locations_data_v1';
+    let locations = [];
+
+    const grid = document.getElementById('grid');
+    const empty = document.getElementById('empty');
+    const openAdd = document.getElementById('openAdd');
+    const modalBackdrop = document.getElementById('modalBackdrop');
+    const form = document.getElementById('locationForm');
+    const formTitle = document.getElementById('formTitle');
+    const locIdInput = document.getElementById('locId');
+    const nameInput = document.getElementById('name');
+    const descInput = document.getElementById('desc');
+    const imageInput = document.getElementById('imageInput');
+    const imgPreview = document.getElementById('imgPreview');
+    const searchInput = document.getElementById('search');
+    const exportBtn = document.getElementById('exportBtn');
+    const importFile = document.getElementById('importFile');
+
+    function load(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        locations = raw? JSON.parse(raw) : [];
+      }catch(e){locations=[]}
+      renderLocations();
+    }
+
+    function saveToStorage(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+    }
+
+    function renderLocations(filter=""){
+      grid.innerHTML='';
+      const filtered = locations.filter(l=> (l.name + l.desc).toLowerCase().includes(filter.toLowerCase()));
+      if(filtered.length===0){empty.style.display='block'} else {empty.style.display='none'}
+      filtered.forEach(loc=>{
+        const tpl = document.getElementById('cardTpl').content.cloneNode(true);
+        const img = tpl.querySelector('img');
+        img.src = loc.image || placeholderDataURL(loc.name);
+        img.alt = loc.name;
+        tpl.querySelector('.meta').textContent = loc.addedAt ? new Date(loc.addedAt).toLocaleString() : '';
+        tpl.querySelector('.title').textContent = loc.name;
+        tpl.querySelector('.desc').textContent = loc.desc;
+        const editBtn = tpl.querySelector('.edit');
+        const delBtn = tpl.querySelector('.del');
+        editBtn.addEventListener('click', ()=> openEdit(loc.id));
+        delBtn.addEventListener('click', ()=> removeLocation(loc.id));
+        grid.appendChild(tpl);
+      })
+    }
+
+    function placeholderDataURL(text){
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='400'><rect width='100%' height='100%' fill='#eef2ff'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Arial' font-size='28' fill='#4b5563'>${escapeHtml(text||'No Image')}</text></svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    function openModal(mode='add'){
+      modalBackdrop.style.display='flex';
+      modalBackdrop.setAttribute('aria-hidden','false');
+      if(mode==='add') formTitle.textContent='Add new location'; else formTitle.textContent='Edit location';
+    }
+    function closeModal(){
+      modalBackdrop.style.display='none';
+      modalBackdrop.setAttribute('aria-hidden','true');
+      form.reset(); locIdInput.value=''; imgPreview.innerHTML='Drop image or click to choose'; delete imgPreview.dataset.image;
+    }
+
+    openAdd.addEventListener('click', ()=> openModal('add'));
+    document.getElementById('cancelBtn').addEventListener('click', (e)=>{ e.preventDefault(); closeModal(); });
+
+    imageInput.addEventListener('change', handleImageFile);
+    imgPreview.addEventListener('click', ()=> imageInput.click());
+
+    function handleImageFile(e){
+      const file = e.target.files && e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        imgPreview.innerHTML = '';
+        const im = document.createElement('img'); im.src = reader.result; imgPreview.appendChild(im);
+        imgPreview.dataset.image = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    imgPreview.addEventListener('dragover', e=>{ e.preventDefault(); imgPreview.style.opacity=0.8 });
+    imgPreview.addEventListener('dragleave', e=>{ imgPreview.style.opacity=1 });
+    imgPreview.addEventListener('drop', e=>{
+      e.preventDefault(); imgPreview.style.opacity=1;
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if(!f) return;
+      imageInput.files = e.dataTransfer.files;
+      handleImageFile({target:imageInput});
+    });
+
+    form.addEventListener('submit', (ev)=>{
+      ev.preventDefault();
+      const id = locIdInput.value || generateId();
+      const item = {
+        id,
+        name: nameInput.value.trim() || 'Untitled',
+        desc: descInput.value.trim() || '',
+        image: imgPreview.dataset.image || '',
+        addedAt: Date.now()
+      };
+      const existing = locations.findIndex(x=>x.id===id);
+      if(existing>=0){ locations[existing] = Object.assign(locations[existing], item); }
+      else locations.unshift(item);
+      saveToStorage(); renderLocations(searchInput.value);
+      closeModal();
+    });
+
+    function openEdit(id){
+      const loc = locations.find(l=>l.id===id); if(!loc) return;
+      locIdInput.value = loc.id; nameInput.value = loc.name; descInput.value = loc.desc;
+      imgPreview.innerHTML = '';
+      if(loc.image){ const im = document.createElement('img'); im.src = loc.image; imgPreview.appendChild(im); imgPreview.dataset.image = loc.image; }
+      else { imgPreview.textContent = 'Drop image or click to choose'; delete imgPreview.dataset.image }
+      openModal('edit');
+    }
+
+    function removeLocation(id){
+      if(!confirm('Delete this location? This cannot be undone.')) return;
+      locations = locations.filter(l=>l.id!==id);
+      saveToStorage(); renderLocations(searchInput.value);
+    }
+
+    searchInput.addEventListener('input', ()=> renderLocations(searchInput.value));
+
+    function generateId(){ return 'loc_' + Math.random().toString(36).slice(2,9); }
+
+    function escapeHtml(str){ return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;'); }
+
+    // Export / Import
+    exportBtn.addEventListener('click', ()=>{
+      const blob = new Blob([JSON.stringify(locations,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'locations_backup.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    importFile.addEventListener('change', (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const imported = JSON.parse(reader.result);
+          if(Array.isArray(imported)){
+            if(confirm('Replace current locations with imported data?')){
+              locations = imported;
+              saveToStorage(); renderLocations(searchInput.value);
+            }
+          } else {
+            alert('Invalid JSON format: expected an array.');
+          }
+        }catch(err){ alert('Failed to parse JSON file.'); }
+      };
+      reader.readAsText(file);
+    });
+
+    load();
+
+    window.LocationsAPI = {
+      getAll: ()=> locations,
+      clear: ()=> { if(confirm('Clear all locations from storage?')){ locations=[]; saveToStorage(); renderLocations(); } }
+    }
+  </script>
+</body>
+</html>
